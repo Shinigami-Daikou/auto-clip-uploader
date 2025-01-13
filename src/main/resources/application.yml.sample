@@ -1,0 +1,16 @@
+auto-clip-uploader:
+  video:
+    videoPath: "<VIDEO_COMPLETE_PATH>"
+    delay: "00:00:00"
+    clips:
+      - name: "<CLIP_NAME_1>"
+        start: "00:00:20"
+        end: "00:04:48"
+      - name: "<CLIP_NAME_2>"
+        start: "00:07:05"
+        end: "00:21:08"
+  youtube:
+    originalName: "<MAIN_CLIP>"
+    categoryId: "24"
+    tags: "tag1, tag2, tag3"
+    videoStatus: "private"
