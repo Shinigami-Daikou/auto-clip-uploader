@@ -38,7 +38,7 @@ public class ClipApplication implements QuarkusApplication {
     }
 
     @Override
-    public int run(String... args) throws ConfigurationException, IOException, GeneralSecurityException {
+    public int run(String... args) throws ConfigurationException, IOException, GeneralSecurityException, InterruptedException {
         Video video = config.video();
         if (video.videoPath() == null || video.videoPath().isEmpty() || video.clips() == null || video.clips().isEmpty()){
             throw new ConfigurationException("Mandatory config not provided. Exiting......");

@@ -11,9 +11,14 @@ import org.shinigami.config.Clip;
 import org.shinigami.config.Video;
 
 import java.io.File;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 @ApplicationScoped
 public class CropVideoUtil {
+
+    private Long delay = 0L;
 
     public void cropVideo(FrameGrabber frameGrabber, String outputFile, long startTime, long endTime){
         try {
@@ -48,8 +53,7 @@ public class CropVideoUtil {
         }
     }
 
-    public void start(Video video) throws FFmpegFrameGrabber.Exception {
-        Long delay = 0L;
+    public void start(Video video) throws FFmpegFrameGrabber.Exception, InterruptedException {
         if(video.delay().isPresent()){
             delay = video.delay().get();
         }
@@ -62,18 +66,30 @@ public class CropVideoUtil {
         }
 
         avutil.av_log_set_level(avutil.AV_LOG_QUIET);
-        FFmpegFrameGrabber frameGrabber = new FFmpegFrameGrabber(video.videoPath());
-        frameGrabber.start();
 
-        int count = 1;
+        ExecutorService executorService = Executors.newFixedThreadPool(10);
+        CountDownLatch countDownLatch = new CountDownLatch(video.clips().size());
+
         for(Clip clip: video.clips()){
-            String filePath = folderPath + count++ + ".mp4";
-            Long startTime = clip.start() + delay;
-            Long endTime = clip.end() + delay;
-            Log.info("Processing Video: " + clip.name());
-            cropVideo(frameGrabber, filePath, startTime, endTime);
+            Runnable videoClipThread = () -> {
+                FFmpegFrameGrabber frameGrabber = new FFmpegFrameGrabber(video.videoPath());
+                try {
+                    frameGrabber.start();
+                    String filePath = folderPath + clip.name() + ".mp4";
+                    Long startTime = clip.start() + delay;
+                    Long endTime = clip.end() + delay;
+                    Log.info("Processing Video: " + clip.name());
+                    cropVideo(frameGrabber, filePath, startTime, endTime);
+                    frameGrabber.stop();
+
+                    countDownLatch.countDown();
+                } catch (FFmpegFrameGrabber.Exception e) {
+                    throw new RuntimeException(e);
+                }
+            };
+            executorService.submit(videoClipThread);
         }
 
-        frameGrabber.stop();
+        countDownLatch.await();
     }
 }

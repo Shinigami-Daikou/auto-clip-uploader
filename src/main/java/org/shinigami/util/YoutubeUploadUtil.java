@@ -27,6 +27,9 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 @ApplicationScoped
 public class YoutubeUploadUtil {
@@ -97,48 +100,66 @@ public class YoutubeUploadUtil {
         return video;
     }
 
-    public void start(Youtube youtube, String videoPath, List<Clip> clips) throws GeneralSecurityException, IOException {
+    public void start(Youtube youtube, String videoPath, List<Clip> clips) throws GeneralSecurityException, IOException, InterruptedException {
         YouTube youtubeService = getService();
 
         String clipDir = videoPath.substring(0, videoPath.lastIndexOf("/")) + "/tmp/";
 
-        String originalTitle = "";
+        String originalTitle;
         if(youtube.originalName().isPresent())
             originalTitle = youtube.originalName().get() + " | Scene: ";
+        else
+            originalTitle = "";
 
         List<String> tags = new ArrayList<>();
         if (youtube.tags().isPresent() && !youtube.tags().isEmpty())
             tags = youtube.tags().get();
 
-        String categoryId = "24";
+        String categoryId;
         if (youtube.categoryId().isPresent())
             categoryId = youtube.categoryId().get();
+        else
+            categoryId = "24";
 
-        String privacyStatus = "public";
+        String privacyStatus;
         if (youtube.videoStatus().isPresent())
             privacyStatus = youtube.videoStatus().get();
+        else
+            privacyStatus = "public";
 
-        int count = 1;
+        ExecutorService executorService = Executors.newFixedThreadPool(10);
+        CountDownLatch countDownLatch = new CountDownLatch(clips.size());
+
         for(Clip clip: clips) {
-            Video video = fillVideoDetails(originalTitle, tags, categoryId, privacyStatus, clip.name());
+            List<String> finalTags = tags;
+            Runnable youtubeUploadThread = () -> {
+                Video video = fillVideoDetails(originalTitle, finalTags, categoryId, privacyStatus, clip.name());
 
-            String filePath = clipDir + count++ + ".mp4";
-            File mediaFile = new File(filePath);
-            if(mediaFile.exists()){
-                Log.info("Uploading Video: " + clip.name());
-                InputStreamContent mediaContent =
-                        new InputStreamContent("application/octet-stream",
-                                new BufferedInputStream(new FileInputStream(mediaFile)));
-                mediaContent.setLength(mediaFile.length());
+                String filePath = clipDir + clip.name() + ".mp4";
+                File mediaFile = new File(filePath);
+                if(mediaFile.exists()){
+                    Log.info("Uploading Video: " + clip.name());
 
-                // Define and execute the API request
-                YouTube.Videos.Insert request = youtubeService.videos()
-                        .insert("snippet,status", video, mediaContent);
-                Video response = request.execute();
-            } else {
-                Log.info("Video does not exist: " + filePath);
-            }
+                    try {
+                        InputStreamContent mediaContent = new InputStreamContent("application/octet-stream",
+                                        new BufferedInputStream(new FileInputStream(mediaFile)));
+                        mediaContent.setLength(mediaFile.length());
+
+                        // Define and execute the API request
+                        YouTube.Videos.Insert request = youtubeService.videos().insert("snippet,status", video, mediaContent);
+                        Video response = request.execute();
+                        countDownLatch.countDown();
+                    } catch (IOException e) {
+                        throw new RuntimeException(e);
+                    }
+                } else {
+                    Log.info("Video does not exist: " + filePath);
+                }
+            };
+            executorService.submit(youtubeUploadThread);
         }
+
+        countDownLatch.await();
     }
 
 }
